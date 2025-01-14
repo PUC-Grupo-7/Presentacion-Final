@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-center">Registro</h1>
+    <form method="POST" action="{{ url_for('signup') }}" class="mt-4" id="signup-form">
+        <div class="mb-3">
+            <label for="email" class="form-label">Correo Electrónico</label>
+            <input type="email" class="form-control" id="email" name="email" placeholder="Ingresa tu correo" required>
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Contraseña</label>
+            <input type="password" class="form-control" id="password" name="password" placeholder="Crea una contraseña" required>
+            <small id="password-hint" class="form-text text-muted">Debe tener al menos 8 caracteres, incluyendo una mayúscula y un número.</small>
+        </div>
+        <button type="submit" class="btn btn-primary w-100" id="submit-btn">Registrarse</button>
+    </form>
+    <div class="text-center mt-3">
+        <p>¿Ya tienes una cuenta? <a href="{{ url_for('login') }}">Inicia sesión aquí</a></p>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const passwordInput = document.getElementById("password");
+    const passwordHint = document.getElementById("password-hint");
+    const submitButton = document.getElementById("submit-btn");
+
+    passwordInput.addEventListener("input", () => {
+        const password = passwordInput.value;
+        const strongPassword = /^(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+        if (strongPassword.test(password)) {
+            passwordHint.textContent = "La contraseña es segura.";
+            passwordHint.classList.remove("text-danger");
+            passwordHint.classList.add("text-success");
+            submitButton.disabled = false;
+        } else {
+            passwordHint.textContent = "Debe tener al menos 8 caracteres, incluyendo una mayúscula y un número.";
+            passwordHint.classList.remove("text-success");
+            passwordHint.classList.add("text-danger");
+            submitButton.disabled = true;
+        }
+    });
+});
+</script>
+{% endblock %}

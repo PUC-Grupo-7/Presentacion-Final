@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container text-center mt-5">
+    <!-- Título y descripción principal -->
+    <h1 class="display-4">¡Bienvenido a MovieBot!</h1>
+    <p class="lead mb-4">Tu recomendador de películas personal basado en inteligencia artificial.</p>
+
+    <!-- Botones antes del banner -->
+    <div class="d-flex justify-content-center gap-3 mb-5">
+        <a href="{{ url_for('chat') }}" class="btn btn-primary btn-lg px-5 py-3" aria-label="Ir al Chat">Ir al Chat</a>
+        <a href="{{ url_for('perfil') }}" class="btn btn-secondary btn-lg px-5 py-3" aria-label="Editar Perfil">Editar Perfil</a>
+    </div>
+
+    <!-- Sección de Noticias y Rankings -->
+    <div class="mb-5">
+        <h2 class="h3">Películas Populares</h2>
+        <div class="row">
+            {% if popular_movies %}
+                {% for banner in popular_movies %}
+                <div class="col-md-4 mb-4">
+                    <div class="card shadow-sm">
+                        <img src="{{ banner.image_url }}" class="card-img-top" alt="{{ banner.title }}">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ banner.title }}</h5>
+                            <p class="card-text">{{ banner.description }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p>No se encontraron películas populares.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Carrusel de banners informativos (Películas destacadas) -->
+    <div id="movieCarousel" class="carousel slide my-5" data-bs-ride="carousel">
+        <div class="carousel-inner">
+            {% if carousel_banners %}
+                {% for banner in carousel_banners %}
+                <div class="carousel-item {% if loop.first %}active{% endif %}">
+                    <img src="{{ banner.image_url }}" class="d-block w-100 rounded" alt="{{ banner.title }}">
+                    <div class="carousel-caption d-none d-md-block bg-dark bg-opacity-50 p-4 rounded">
+                        <h5 class="fw-bold">{{ banner.title }}</h5>
+                        <p>{{ banner.short_description }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p>No se encontraron banners para el carrusel.</p>
+            {% endif %}
+        </div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#movieCarousel" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Anterior</span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#movieCarousel" data-bs-slide="next">
+            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Siguiente</span>
+        </button>
+    </div>
+</div>
+{% endblock %}

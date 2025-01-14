@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-center">Inicio de Sesión</h1>
+    <form method="POST" action="{{ url_for('login') }}" class="mt-4">
+        <div class="mb-3">
+            <label for="email" class="form-label">Correo Electrónico</label>
+            <input type="email" class="form-control" id="email" name="email" placeholder="Ingresa tu correo" required>
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Contraseña</label>
+            <input type="password" class="form-control" id="password" name="password" placeholder="Ingresa tu contraseña" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
+    </form>
+    <div class="text-center mt-3">
+        <p>¿No tienes una cuenta? <a href="{{ url_for('signup') }}">Regístrate aquí</a></p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+<!-- movie_bot/templates/perfil.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="mb-4 text-center">Editar Perfil</h1>
+
+    <!-- Formulario para editar el perfil -->
+    <form method="POST" action="{{ url_for('perfil') }}">
+        {{ form.hidden_tag() }}
+
+        <!-- Campo: Género Favorito -->
+        <div class="mb-3">
+            <label for="{{ form.favorite_genre.id }}" class="form-label">
+                🎥 {{ form.favorite_genre.label }} <span class="text-danger">*</span>
+            </label>
+            {{ form.favorite_genre(class="form-control", **{'aria-describedby': 'favoriteGenreHelp'}) }}
+            {% if form.favorite_genre.errors %}
+                <div class="text-danger">
+                    {% for error in form.favorite_genre.errors %}
+                        <small>{{ error }}</small>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Campo: Género a Evitar -->
+        <div class="mb-3">
+            <label for="{{ form.disliked_genre.id }}" class="form-label">
+                🚫 {{ form.disliked_genre.label }} <span class="text-danger">*</span>
+            </label>
+            {{ form.disliked_genre(class="form-control", **{'aria-describedby': 'dislikedGenreHelp'}) }}
+            {% if form.disliked_genre.errors %}
+                <div class="text-danger">
+                    {% for error in form.disliked_genre.errors %}
+                        <small>{{ error }}</small>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Botón para guardar -->
+        <button type="submit" class="btn btn-success w-100" aria-label="Guardar Perfil">Guardar</button>
+    </form>
+</div>
+{% endblock %}
