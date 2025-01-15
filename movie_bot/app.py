@@ -6,7 +6,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from .db import db, db_config
 from .models import User, Message
 from .forms import ProfileForm
-from .tmdb_api import get_streaming_platforms, get_movie_rating, get_similar_movies, get_all_movies, get_movies_by_year, extract_year_from_message
+from .tmdb_api import get_streaming_platforms, get_movie_rating, get_similar_movies, get_popular_movies, get_carousel_banners
 import openai
 from openai.error import AuthenticationError, RateLimitError, OpenAIError
 from flask_bootstrap import Bootstrap5
@@ -47,10 +47,10 @@ def landing():
     Página principal con banners informativos y películas populares.
     """
     # Obtener datos para las películas populares (esto puede ser diferente de las películas del carrusel)
-    popular_movies = get_all_movies(limit=6)
+    popular_movies = get_popular_movies(limit=6)
 
     # Obtener películas para el carrusel (con información diferente)
-    carousel_banners = get_all_movies(limit=5)  # Podría ser un conjunto diferente de películas
+    carousel_banners = get_carousel_banners(limit=5)  # Podría ser un conjunto diferente de películas
 
     return render_template("landing.html", title="Página de Inicio", popular_movies=popular_movies, carousel_banners=carousel_banners)
 
@@ -110,29 +110,71 @@ def chat():
             db.session.add(Message(content=user_message, author="user", user=current_user))
             db.session.commit()
 
-            # Extraer el año de la película si se menciona
-            year = extract_year_from_message(user_message)
+            # Identificar si el mensaje requiere consultar plataformas de streaming
+            if "dónde puedo ver" in user_message.lower():
+                movie_name = user_message.lower().replace("dónde puedo ver", "").strip().capitalize()
+                result = get_streaming_platforms(movie_name)
 
-            if year:
-                # Consultar películas del año especificado
-                result = get_movies_by_year(year, limit=5)
                 if "error" in result:
                     bot_reply = result["error"]
                 elif "message" in result:
                     bot_reply = result["message"]
                 else:
-                    movie_titles = [movie["title"] for movie in result]
-                    bot_reply = f"Estas son algunas películas del año {year}: {', '.join(movie_titles)}."
+                    platforms = [p["name"] for p in result["platforms"]]
+                    bot_reply = f"La película '{movie_name}' está disponible en: {', '.join(platforms)}."
+
+            # Identificar si el mensaje requiere consultar la evaluación de una película
+            elif "qué evaluación tiene" in user_message.lower():
+                movie_name = user_message.lower().replace("qué evaluación tiene", "").strip().capitalize()
+                result = get_movie_rating(movie_name)
+
+                if "error" in result:
+                    bot_reply = result["error"]
+                else:
+                    bot_reply = f"La película '{movie_name}' tiene una puntuación promedio de {result['rating']}."
+
+            # Identificar si el mensaje requiere buscar películas similares
+            elif "parecida a" in user_message.lower():
+                movie_name = user_message.lower().replace("parecida a", "").strip().capitalize()
+                result = get_similar_movies(movie_name)
+
+                if "error" in result:
+                    bot_reply = result["error"]
+                elif "message" in result:
+                    bot_reply = result["message"]
+                else:
+                    recommendations = [f"{m['title']} (estrenada el {m['release_date']})" for m in result["recommendations"]]
+                    bot_reply = f"Películas similares a '{movie_name}':\n" + "\n".join(recommendations)
+
             else:
-                # Si no se menciona un año, mostramos todas las películas disponibles
-                result = get_all_movies(limit=5)
-                if "error" in result:
-                    bot_reply = result["error"]
-                elif "message" in result:
-                    bot_reply = result["message"]
-                else:
-                    movie_titles = [movie["title"] for movie in result]
-                    bot_reply = f"Estas son algunas de las películas disponibles: {', '.join(movie_titles)}."
+                # Respuesta predeterminada del bot
+                prompt = f"""
+                Eres un bot recomendador de películas llamado MovieBot.
+                Género favorito del usuario: {current_user.favorite_genre or 'No especificado'}.
+                Género que debe evitar: {current_user.disliked_genre or 'No especificado'}.
+                Responde de forma breve y clara.
+                """
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": user_message}
+                        ]
+                    )
+                    bot_reply = response['choices'][0]['message']['content']
+                except AuthenticationError:
+                    bot_reply = "Error de autenticación. Verifica tu clave API."
+                    logger.error("Error de autenticación con OpenAI.")
+                except RateLimitError:
+                    bot_reply = "Has excedido el límite de solicitudes. Intenta nuevamente más tarde."
+                    logger.error("Límite de solicitudes excedido a OpenAI.")
+                except OpenAIError as e:
+                    bot_reply = f"Error general de OpenAI: {e}"
+                    logger.error(f"Error general de OpenAI: {e}")
+                except Exception as e:
+                    bot_reply = f"Error inesperado: {e}"
+                    logger.error(f"Error inesperado: {e}")
 
             # Guardar respuesta del bot
             db.session.add(Message(content=bot_reply, author="assistant", user=current_user))
