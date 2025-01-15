@@ -1,5 +1,6 @@
 import os
 import requests
+import re
 
 # Función para obtener plataformas de streaming de una película
 def get_streaming_platforms(movie_name, region="US"):
@@ -89,44 +90,71 @@ def get_similar_movies(movie_name):
     movies = [{"title": m["title"], "release_date": m.get("release_date", "Fecha desconocida")} for m in similar_movies]
     return {"movie": movie_name, "recommendations": movies}
 
-# Función para obtener películas populares para los banners informativos
-def get_popular_movies(limit=5):
+# Función para obtener todas las películas disponibles en TMDB
+def get_all_movies(limit=5):
+    """
+    Obtiene una lista de todas las películas disponibles en TMDB.
+    """
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
-    url = f"{base_url}/movie/popular"
-    params = {"api_key": api_key, "language": "es", "page": 1}
+    url = f"{base_url}/discover/movie"
+    params = {
+        "api_key": api_key,
+        "language": "es",  
+        "sort_by": "popularity.desc",  # Ordenamos por popularidad
+        "page": 1
+    }
     response = requests.get(url, params=params)
 
     if response.status_code != 200:
-        return []
+        return {"error": "Error al obtener las películas de TMDB."}
 
     movies = response.json().get("results", [])
-    banners = []
-    for movie in movies[:limit]:
-        banners.append({
-            "title": movie["title"],
-            "description": movie.get("overview", "Sin descripción disponible."),
-            "image_url": f"https://image.tmdb.org/t/p/w500{movie['backdrop_path']}" if movie.get("backdrop_path") else "/static/images/default_banner.jpg"
-        })
-    return banners
+    if not movies:
+        return {"message": "No se encontraron películas."}
 
-# Función para obtener películas para el carrusel, con descripciones cortas
-def get_carousel_banners(limit=5):
+    # Formateamos los resultados
+    movie_list = [{"title": m["title"], "description": m.get("overview", "Sin descripción disponible."),
+                   "release_date": m["release_date"], "image_url": f"https://image.tmdb.org/t/p/w500{m['poster_path']}" if m.get("poster_path") else "/static/images/default_movie.jpg"} for m in movies[:limit]]
+    
+    return movie_list
+
+# Función para obtener películas de un año específico
+def get_movies_by_year(year, limit=5):
+    """
+    Obtiene una lista de películas de un año específico.
+    """
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
-    url = f"{base_url}/movie/popular"
-    params = {"api_key": api_key, "language": "es", "page": 1}
+    url = f"{base_url}/discover/movie"
+    params = {
+        "api_key": api_key,
+        "language": "es",
+        "primary_release_year": year,  # Filtramos por el año solicitado
+        "sort_by": "release_date.desc",  # Ordenamos por fecha de estreno
+        "page": 1
+    }
     response = requests.get(url, params=params)
 
     if response.status_code != 200:
-        return []
+        return {"error": "Error al obtener las películas del año solicitado."}
 
     movies = response.json().get("results", [])
-    banners = []
-    for movie in movies[:limit]:
-        banners.append({
-            "title": movie["title"],
-            "short_description": movie.get("overview", "Sin descripción disponible.")[:150],  # Descripción corta
-            "image_url": f"https://image.tmdb.org/t/p/w500{movie['backdrop_path']}" if movie.get("backdrop_path") else "/static/images/default_banner.jpg"
-        })
-    return banners
+    if not movies:
+        return {"message": f"No se encontraron películas del año {year}."}
+
+    # Formateamos los resultados
+    movie_list = [{"title": m["title"], "description": m.get("overview", "Sin descripción disponible."),
+                   "release_date": m["release_date"], "image_url": f"https://image.tmdb.org/t/p/w500{m['poster_path']}" if m.get("poster_path") else "/static/images/default_movie.jpg"} for m in movies[:limit]]
+    
+    return movie_list
+
+# Función para extraer el año de una cadena de texto
+def extract_year_from_message(message):
+    """
+    Extrae el año de una cadena de texto.
+    """
+    match = re.search(r'\b(20\d{2})\b', message)  # Captura cualquier año entre 2000 y 2099
+    if match:
+        return int(match.group(1))
+    return None
