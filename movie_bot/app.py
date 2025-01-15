@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 import openai
 from openai.error import AuthenticationError, RateLimitError, OpenAIError
 
-# Ajusta según tu estructura de proyecto
+# Ajusta estos imports según tu estructura
 from .db import db, db_config
 from .models import User, Message
 from .forms import ProfileForm
@@ -29,7 +29,8 @@ from .tmdb_api import (
     get_movie_trailer,
     get_now_playing_movies,
     get_popular_movies,
-    get_carousel_banners
+    get_carousel_banners,
+    discover_movies_by_genre  # Función que debes implementar en tmdb_api.py
 )
 
 load_dotenv()
@@ -40,12 +41,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "clave_secreta_predeterminada")
 
-# Config DB
 db_config(app)
 Bootstrap5(app)
 migrate = Migrate(app, db)
 
-# Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
@@ -58,45 +57,49 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
 # -----------------------------------------------------------
-# Funciones de normalización de texto
+# Funciones para normalizar texto y quitar acentos
 # -----------------------------------------------------------
-
 def remover_acentos(texto: str) -> str:
     """
     Elimina los acentos de cualquier carácter que los lleve.
-    Ejemplo: 'evaluación' -> 'evaluacion', 'puntuación' -> 'puntuacion'
     """
-    # Normalizamos a NFD para separar los acentos de las letras base
+    # Separa acentos (NFD)
     normalized = unicodedata.normalize('NFD', texto)
-    # Filtramos los caracteres de tipo Mn (mark nonspacing)
+    # Filtra los caracteres que son de tipo 'Mark Nonspacing' (Mn)
     sin_acentos = "".join(c for c in normalized if unicodedata.category(c) != 'Mn')
-    # Volvemos a componer en NFC
+    # Vuelve a componer en NFC
     return unicodedata.normalize('NFC', sin_acentos)
 
 def limpiar_texto(texto: str) -> str:
     """
-    Convierte a minúsculas, elimina signos de puntuación básicos
-    (¿ ? ¡ ! , . : ;) y elimina acentos de las palabras.
+    Convierte a minúsculas, elimina signos básicos de puntuación
+    y quita acentos de las palabras.
     """
-    # 1. Convertimos a minúsculas
     texto = texto.lower()
-    # 2. Eliminamos signos básicos de puntuación
     for ch in ["¿", "?", "¡", "!", ",", ".", ":", ";"]:
         texto = texto.replace(ch, "")
-    # 3. Quitamos acentos (tildes)
     texto = remover_acentos(texto)
-    # 4. Retornamos el string limpio y recortado
     return texto.strip()
 
 
 # -----------------------------------------------------------
-# Rutas de la aplicación
+# Mapeo de géneros a IDs de TMDB
 # -----------------------------------------------------------
+GENRE_MAP = {
+    "accion": 28,
+    "terror": 27,
+    "comedia": 35,
+    "drama": 18,
+    "romance": 10749,
+    # Para 'suspenso', TMDB usa "Thriller" con id=53
+    "suspenso": 53
+}
+
 
 @app.route("/")
 def landing():
     """
-    Página principal con banners informativos y películas populares.
+    Página principal con banners y películas populares.
     """
     popular_movies = get_popular_movies(limit=6)
     carousel_banners = get_carousel_banners(limit=5)
@@ -157,30 +160,26 @@ def logout():
 @login_required
 def chat():
     """
-    Página de chat con MovieBot.
-    Envía mensajes, detecta intenciones y responde con datos de TMDB o GPT.
+    Página de chat con MovieBot, que maneja frases clave
+    y llama a TMDB o GPT.
     """
     try:
         if request.method == "POST":
             user_message = request.form.get("message")
 
-            # Validar mensaje vacío
             if not user_message or user_message.strip() == "":
                 flash("El mensaje no puede estar vacío.", "danger")
                 messages = Message.query.filter_by(user_id=current_user.id).order_by(Message.timestamp.asc()).all()
                 return render_template("chat.html", messages=messages, title="Chat")
 
-            # Guardar el mensaje del usuario (tal cual)
+            # Guardar el mensaje del usuario
             db.session.add(Message(content=user_message, author="user", user=current_user))
             db.session.commit()
 
-            # Crear versión limpia para la detección de intenciones
             user_msg_clean = limpiar_texto(user_message)
-            logger.info(f"[CHAT] Mensaje original: {user_message} | Mensaje limpio: {user_msg_clean}")
+            logger.info(f"[CHAT] Original: {user_message} | Limpio: {user_msg_clean}")
 
-            # ---------------------------------------------------
             # 1. "donde puedo ver x"
-            # ---------------------------------------------------
             if "donde puedo ver" in user_msg_clean:
                 idx = user_msg_clean.find("donde puedo ver")
                 offset = len("donde puedo ver")
@@ -195,16 +194,12 @@ def chat():
                     platforms = [p["name"] for p in result["platforms"]]
                     bot_reply = f"La película '{movie_name}' está disponible en: {', '.join(platforms)}."
 
-            # ---------------------------------------------------
             # 2. "que evaluacion/puntuacion/rating tiene x"
-            #    (tildes removidas => 'evaluacion', 'puntuacion', etc.)
-            # ---------------------------------------------------
             elif (
                 "que evaluacion tiene" in user_msg_clean or
                 "que puntuacion tiene" in user_msg_clean or
                 "que rating tiene" in user_msg_clean
             ):
-                # Hallamos la frase coincidida
                 possible_phrases = [
                     "que evaluacion tiene",
                     "que puntuacion tiene",
@@ -227,11 +222,9 @@ def chat():
                     else:
                         bot_reply = f"La película '{movie_name}' tiene una puntuación promedio de {result['rating']}."
                 else:
-                    bot_reply = "No entendí bien tu pregunta sobre la evaluación de la película."
+                    bot_reply = "No entendí tu pregunta sobre la evaluación de la película."
 
-            # ---------------------------------------------------
             # 3. "parecida a x"
-            # ---------------------------------------------------
             elif "parecida a" in user_msg_clean:
                 idx = user_msg_clean.find("parecida a")
                 movie_name = user_msg_clean[idx + len("parecida a"):].strip()
@@ -246,14 +239,9 @@ def chat():
                         f"{m['title']} (estrenada el {m['release_date']})"
                         for m in result["recommendations"]
                     ]
-                    bot_reply = (
-                        f"Películas similares a '{movie_name}':\n" +
-                        "\n".join(recommendations)
-                    )
+                    bot_reply = f"Películas similares a '{movie_name}':\n" + "\n".join(recommendations)
 
-            # ---------------------------------------------------
             # 4. "muestras el trailer de x"
-            # ---------------------------------------------------
             elif "muestras el trailer de" in user_msg_clean:
                 idx = user_msg_clean.find("muestras el trailer de")
                 offset = len("muestras el trailer de")
@@ -265,14 +253,10 @@ def chat():
                 elif "message" in trailer_data:
                     bot_reply = trailer_data["message"]
                 else:
-                    trailer_url = trailer_data["trailer_url"]
-                    bot_reply = f"Aquí está el tráiler de '{movie_name}': {trailer_url}"
+                    bot_reply = f"Aquí está el tráiler de '{movie_name}': {trailer_data['trailer_url']}"
 
-            # ---------------------------------------------------
             # 5. "me recomiendas x" / "recomiendame x"
-            # ---------------------------------------------------
-            elif "me recomiendas" in user_msg_clean or "recomiendame" in user_msg_clean:
-                # Detección
+            elif ("me recomiendas" in user_msg_clean) or ("recomiendame" in user_msg_clean):
                 if "me recomiendas" in user_msg_clean:
                     idx = user_msg_clean.find("me recomiendas")
                     offset = len("me recomiendas")
@@ -280,11 +264,25 @@ def chat():
                     idx = user_msg_clean.find("recomiendame")
                     offset = len("recomiendame")
 
-                movie_name = user_msg_clean[idx + offset:].strip()
+                tail = user_msg_clean[idx + offset:].strip()  # Ej: "una pelicula de terror"
 
-                if not movie_name or "pelicula" in movie_name or "reciente" in movie_name:
-                    # Buscar estrenos
-                    result = get_now_playing_movies(limit=5, region="US", language="es")
+                # Detectar si en 'tail' hay un género
+                found_genre_word = None
+                found_genre_id = None
+                for genre_word, genre_id in GENRE_MAP.items():
+                    if genre_word in tail:
+                        found_genre_word = genre_word
+                        found_genre_id = genre_id
+                        break
+
+                if found_genre_id:
+                    # Llamamos a discover_movies_by_genre
+                    result = discover_movies_by_genre(
+                        genre_id=found_genre_id,
+                        limit=5,
+                        region="US",
+                        language="es"
+                    )
                     if "error" in result:
                         bot_reply = result["error"]
                     elif "message" in result:
@@ -292,32 +290,54 @@ def chat():
                     else:
                         movie_list = result.get("movies", [])
                         if not movie_list:
-                            bot_reply = "No encontré películas recientes en este momento."
+                            bot_reply = "No encontré películas de ese género en este momento."
                         else:
                             lines = [
                                 f"{m['title']} (Estreno: {m['release_date']})"
                                 for m in movie_list
                             ]
+                            # Usar solo la palabra del género, no 'tail' completo:
                             bot_reply = (
-                                "Aquí tienes algunas películas recientes en cartelera:\n" +
+                                f"Películas de {found_genre_word} que podrían gustarte:\n" +
                                 "\n".join(lines)
                             )
                 else:
-                    # Buscar rating
-                    result = get_movie_rating(movie_name)
-                    if "error" in result:
-                        bot_reply = result["error"]
+                    # Si no hay género, vemos si 'tail' sugiere estrenos o un título
+                    # Ej: 'una pelicula reciente', 'algo'...
+                    if not tail or "pelicula" in tail or "reciente" in tail or "algo" in tail:
+                        # Recomendamos estrenos
+                        result = get_now_playing_movies(limit=5, region="US", language="es")
+                        if "error" in result:
+                            bot_reply = result["error"]
+                        elif "message" in result:
+                            bot_reply = result["message"]
+                        else:
+                            movie_list = result.get("movies", [])
+                            if not movie_list:
+                                bot_reply = "No encontré películas recientes en este momento."
+                            else:
+                                lines = [
+                                    f"{m['title']} (Estreno: {m['release_date']})"
+                                    for m in movie_list
+                                ]
+                                bot_reply = (
+                                    "Aquí tienes algunas películas recientes en cartelera:\n" +
+                                    "\n".join(lines)
+                                )
                     else:
-                        rating = result["rating"]
-                        bot_reply = (
-                            f"Para la película '{movie_name}', la puntuación promedio "
-                            f"en TMDB es {rating}. ¿Te gustaría saber algo más?"
-                        )
+                        # Interpreta 'tail' como título
+                        result = get_movie_rating(tail)
+                        if "error" in result:
+                            bot_reply = result["error"]
+                        else:
+                            rating = result["rating"]
+                            bot_reply = (
+                                f"Para la película '{tail}', la puntuación promedio "
+                                f"en TMDB es {rating}. ¿Te gustaría saber algo más?"
+                            )
 
-            # ---------------------------------------------------
             # 6. "peliculas mas recientes" / "estrenos"
-            # ---------------------------------------------------
-            elif "peliculas mas recientes" in user_msg_clean or "estrenos" in user_msg_clean:
+            elif ("peliculas mas recientes" in user_msg_clean) or ("estrenos" in user_msg_clean):
                 result = get_now_playing_movies(limit=5, region="US", language="es")
                 if "error" in result:
                     bot_reply = result["error"]
@@ -337,9 +357,7 @@ def chat():
                             "\n".join(lines)
                         )
 
-            # ---------------------------------------------------
             # 7. Caso genérico: GPT
-            # ---------------------------------------------------
             else:
                 system_prompt = f"""
                 Eres un bot recomendador de películas llamado MovieBot.
@@ -369,11 +387,10 @@ def chat():
                     bot_reply = f"Error inesperado: {e}"
                     logger.error(f"Error inesperado: {e}")
 
-            # Guardar la respuesta del bot
+            # Guardar respuesta del bot
             db.session.add(Message(content=bot_reply, author="assistant", user=current_user))
             db.session.commit()
 
-        # Mostrar historial de mensajes
         messages = Message.query.filter_by(user_id=current_user.id).order_by(Message.timestamp.asc()).all()
         return render_template("chat.html", messages=messages, title="Chat")
 
@@ -385,9 +402,6 @@ def chat():
 @app.route("/perfil", methods=["GET", "POST"])
 @login_required
 def perfil():
-    """
-    Página para editar el perfil del usuario (género favorito, disliked_genre, etc.)
-    """
     try:
         form = ProfileForm(obj=current_user)
 

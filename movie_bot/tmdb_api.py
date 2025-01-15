@@ -36,7 +36,7 @@ def get_streaming_platforms(movie_name, region="US"):
     if not results:
         return {"error": f"No se encontró la película '{movie_name}' en TMDB."}
 
-    # Tomamos la primera coincidencia
+    # Tomar la primera coincidencia
     movie_id = results[0]["id"]
 
     # 2. Obtener las plataformas de streaming
@@ -72,7 +72,6 @@ def get_movie_rating(movie_name):
     if not api_key:
         return {"error": "No se ha configurado la clave de TMDB (TMDB_API_KEY)."}
 
-    # 1. Buscar la película por nombre
     search_url = f"{base_url}/search/movie"
     params = {"api_key": api_key, "query": movie_name}
 
@@ -163,7 +162,6 @@ def get_movie_trailer(movie_name):
     if not api_key:
         return {"error": "No se ha configurado la clave de TMDB (TMDB_API_KEY)."}
 
-    # 1. Buscar la película
     search_url = f"{base_url}/search/movie"
     params = {"api_key": api_key, "query": movie_name, "language": "es"}
 
@@ -200,7 +198,6 @@ def get_movie_trailer(movie_name):
     if not videos_data:
         return {"message": "No hay tráiler disponible para esta película."}
 
-    # 3. Buscar un video de tipo "Trailer" y "YouTube"
     for video in videos_data:
         if video.get("type", "").lower() == "trailer" and video.get("site", "").lower() == "youtube":
             youtube_key = video["key"]
@@ -338,6 +335,68 @@ def get_now_playing_movies(limit=5, region="US", language="es"):
 
     results = results[:limit]
 
+    movies = []
+    for movie in results:
+        title = movie.get("title", "Título desconocido")
+        release_date = movie.get("release_date", "Fecha desconocida")
+        overview = movie.get("overview", "Sin descripción disponible.")
+        backdrop_path = movie.get("backdrop_path")
+
+        if backdrop_path:
+            image_url = f"https://image.tmdb.org/t/p/w500{backdrop_path}"
+        else:
+            image_url = "/static/images/default_banner.jpg"
+
+        movies.append({
+            "title": title,
+            "release_date": release_date,
+            "overview": overview,
+            "image_url": image_url
+        })
+
+    return {"movies": movies}
+
+
+# ---------------------------------------------------------
+# NUEVA FUNCIÓN: discover_movies_by_genre
+# ---------------------------------------------------------
+def discover_movies_by_genre(genre_id, limit=5, region="US", language="es"):
+    """
+    Descubre películas filtrando por el género (genre_id) usando /discover/movie.
+    Retorna un dict con {"movies": [...]}, cada elemento con title, release_date, etc.
+    """
+    api_key = os.getenv("TMDB_API_KEY")
+    base_url = "https://api.themoviedb.org/3"
+    discover_url = f"{base_url}/discover/movie"
+
+    if not api_key:
+        return {"error": "No se ha configurado la clave de TMDB (TMDB_API_KEY)."}
+
+    params = {
+        "api_key": api_key,
+        "language": language,
+        "region": region,
+        "sort_by": "popularity.desc",
+        "with_genres": genre_id,
+        "page": 1
+    }
+
+    try:
+        response = requests.get(discover_url, params=params)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[discover_movies_by_genre] Error HTTP al realizar discover: {e}")
+        return {"error": "Error al conectar con TMDB."}
+
+    if response.status_code != 200:
+        logger.error(f"[discover_movies_by_genre] Código de estado inesperado: {response.status_code}")
+        return {"error": f"Error al obtener películas por género (status code: {response.status_code})."}
+
+    data = response.json()
+    results = data.get("results", [])
+    if not results:
+        return {"message": "No se encontraron películas para este género en este momento."}
+
+    results = results[:limit]
     movies = []
     for movie in results:
         title = movie.get("title", "Título desconocido")
