@@ -4,12 +4,17 @@
 <div class="container mt-5">
     <h1 class="text-center">Chat con MovieBot</h1>
 
+    <!-- Botón para limpiar el chat -->
+    <form method="POST" action="{{ url_for('clear_chat') }}" class="d-flex justify-content-end mb-3">
+        <button type="submit" class="btn btn-outline-danger">Limpiar Chat</button>
+    </form>
+
     <!-- Formulario para enviar mensajes -->
     <form method="POST" action="{{ url_for('chat') }}">
         <!-- Mensajes pre-hechos -->
         <div class="mb-3 d-flex justify-content-between flex-wrap">
             <button type="submit" name="message" value="Recomiéndame una película de acción" class="btn btn-primary mb-2" formnovalidate aria-label="Recomiéndame una película de acción">
-                🎬 Acción
+                🎮 Acción
             </button>
             <button type="submit" name="message" value="Quiero ver algo de comedia" class="btn btn-success mb-2" formnovalidate aria-label="Quiero ver algo de comedia">
                 😂 Comedia

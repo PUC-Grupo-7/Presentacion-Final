@@ -1,3 +1,4 @@
+# movie_bot/models.py
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from .db import db
@@ -12,23 +13,12 @@ class User(db.Model, UserMixin):
     favorite_genre = db.Column(db.String(50), nullable=True)
     disliked_genre = db.Column(db.String(50), nullable=True)
     messages = db.relationship('Message', backref='user', lazy=True)
+    recommendations = db.relationship('Recommendation', backref='user', lazy=True)
 
     def set_password(self, password):
-        """
-        Hashea la contraseña del usuario.
-        Args:
-            password (str): Contraseña en texto plano.
-        """
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
-        """
-        Verifica si una contraseña coincide con el hash almacenado.
-        Args:
-            password (str): Contraseña en texto plano.
-        Returns:
-            bool: True si coincide, False de lo contrario.
-        """
         return check_password_hash(self.password_hash, password)
 
     def __repr__(self):
@@ -45,3 +35,15 @@ class Message(db.Model):
 
     def __repr__(self):
         return f"<Message {self.id} by {self.author} at {self.timestamp}>"
+
+class Recommendation(db.Model):
+    __tablename__ = 'recommendations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    movie_id = db.Column(db.Integer, nullable=False)  # ID de TMDB
+    movie_title = db.Column(db.String(255), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Recommendation {self.movie_title} (ID: {self.movie_id}) for User {self.user_id}>"

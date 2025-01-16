@@ -7,24 +7,24 @@ class ProfileForm(FlaskForm):
     favorite_genre = SelectField(
         'Género Favorito',
         choices=[
-            ('Acción', 'Acción'),
-            ('Comedia', 'Comedia'),
-            ('Drama', 'Drama'),
-            ('Terror', 'Terror'),
-            ('Suspenso', 'Suspenso'),
-            ('Romance', 'Romance')
+            ('accion', 'Acción'),
+            ('comedia', 'Comedia'),
+            ('drama', 'Drama'),
+            ('terror', 'Terror'),
+            ('suspenso', 'Suspenso'),
+            ('romance', 'Romance')
         ],
         validators=[DataRequired()]
     )
     disliked_genre = SelectField(
         'Género a Evitar',
         choices=[
-            ('Acción', 'Acción'),
-            ('Comedia', 'Comedia'),
-            ('Drama', 'Drama'),
-            ('Terror', 'Terror'),
-            ('Suspenso', 'Suspenso'),
-            ('Romance', 'Romance')
+            ('accion', 'Acción'),
+            ('comedia', 'Comedia'),
+            ('drama', 'Drama'),
+            ('terror', 'Terror'),
+            ('suspenso', 'Suspenso'),
+            ('romance', 'Romance')
         ],
         validators=[DataRequired()]
     )
