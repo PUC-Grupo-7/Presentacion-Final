@@ -12,6 +12,9 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(128), nullable=False)
     favorite_genre = db.Column(db.String(50), nullable=True)
     disliked_genre = db.Column(db.String(50), nullable=True)
+    # Nueva columna para la región del usuario
+    region = db.Column(db.String(5), nullable=True, default="US")
+
     messages = db.relationship('Message', backref='user', lazy=True)
     recommendations = db.relationship('Recommendation', backref='user', lazy=True)
 

@@ -56,8 +56,9 @@ def load_user(user_id):
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+
 # ----------------------------------------------------------
-# Funciones para normalizar texto y quitar acentos
+# Funciones de ayuda para limpiar texto y remover acentos
 # ----------------------------------------------------------
 def remover_acentos(texto: str) -> str:
     normalized = unicodedata.normalize('NFD', texto)
@@ -71,6 +72,7 @@ def limpiar_texto(texto: str) -> str:
     texto = remover_acentos(texto)
     return texto.strip()
 
+# Diccionario para mapear géneros a sus IDs de TMDB
 GENRE_MAP = {
     "accion": 28,
     "terror": 27,
@@ -84,6 +86,7 @@ def obtener_ids_recomendados(user_id: int) -> set:
     recomendaciones = Recommendation.query.filter_by(user_id=user_id).all()
     return set([r.movie_id for r in recomendaciones])
 
+
 # ----------------------------------------------------------
 # Rutas
 # ----------------------------------------------------------
@@ -91,10 +94,19 @@ def obtener_ids_recomendados(user_id: int) -> set:
 @app.route("/")
 def landing():
     """
-    Página principal con banners y películas populares (Diseño anterior).
+    Página principal que muestra:
+    - Lista de películas populares (banners principales).
+    - Carrusel de banners con películas distintas para evitar duplicidades.
     """
-    popular_movies = get_popular_movies(limit=6)
-    carousel_banners = get_carousel_banners(limit=5)
+    region = "US"
+    if current_user.is_authenticated and current_user.region:
+        region = current_user.region
+
+    # Obtenemos 6 películas populares (página 1)
+    popular_movies = get_popular_movies(limit=6, region=region, language="es", page=1)
+    # Obtenemos 5 películas diferentes para el carrusel (página 2)
+    carousel_banners = get_carousel_banners(limit=5, region=region, language="es", page=2)
+
     return render_template(
         "landing.html",
         title="Página de Inicio",
@@ -173,6 +185,7 @@ def chat():
                 ).order_by(Message.timestamp.asc()).all()
                 return render_template("chat.html", messages=messages, title="Chat")
 
+            # Guardamos el mensaje del usuario en la BD
             db.session.add(Message(content=user_message, author="user", user=current_user))
             db.session.commit()
 
@@ -180,18 +193,18 @@ def chat():
             logger.info(f"[CHAT] Original: {user_message} | Limpio: {user_msg_clean}")
 
             ids_recomendados = obtener_ids_recomendados(current_user.id)
+            user_region = current_user.region or "US"  # región del usuario o US por defecto
 
             # ------------------------------------------------
-            # Lógica para distintas intenciones
+            # Lógica de intenciones
             # ------------------------------------------------
 
-            # 1. "donde puedo ver x"
-            if "donde puedo ver" in user_msg_clean:
-                idx = user_msg_clean.find("donde puedo ver")
-                offset = len("donde puedo ver")
-                movie_name = user_msg_clean[idx + offset:].strip()
-
-                result = get_streaming_platforms(movie_name, region="US")
+            # 1. "donde puedo ver" + título
+            # Regex para capturar "donde puedo ver" o "donde veo" con o sin "la pelicula"
+            pattern_where = re.search(r"donde (?:puedo ver|veo)(?: la pelicula)?\s+(.*)", user_msg_clean)
+            if pattern_where:
+                movie_name = pattern_where.group(1).strip()
+                result = get_streaming_platforms(movie_name, region=user_region)
                 if "error" in result:
                     bot_reply = result["error"]
                 elif "message" in result:
@@ -199,7 +212,7 @@ def chat():
                 else:
                     platforms = [p["name"] for p in result["platforms"]]
                     bot_reply = (
-                        f"La película '{movie_name}' está disponible en: "
+                        f"La película '{movie_name}' está disponible (en {user_region}) en: "
                         f"{', '.join(platforms)}."
                     )
 
@@ -229,7 +242,10 @@ def chat():
                     if "error" in result:
                         bot_reply = result["error"]
                     else:
-                        bot_reply = f"La película '{movie_name}' tiene una puntuación promedio de {result['rating']}."
+                        bot_reply = (
+                            f"La película '{movie_name}' tiene una puntuación promedio de "
+                            f"{result['rating']}."
+                        )
 
             # 3. "parecida a x"
             elif "parecida a" in user_msg_clean:
@@ -237,7 +253,7 @@ def chat():
                 offset = len("parecida a")
                 movie_name = user_msg_clean[idx + offset:].strip()
 
-                result = get_similar_movies(movie_name)
+                result = get_similar_movies(movie_name, language="es")
                 if "error" in result:
                     bot_reply = result["error"]
                 elif "message" in result:
@@ -254,7 +270,7 @@ def chat():
                         bot_reply = (
                             f"Películas similares a '{movie_name}':\n" + "\n".join(recommendations)
                         )
-                        # Guardar en Recommendation
+                        # Guardar en Recommendation los primeros 5
                         for rec_m in result["recommendations"][:5]:
                             if rec_m["id"] not in ids_recomendados:
                                 db.session.add(Recommendation(
@@ -297,45 +313,63 @@ def chat():
                         break
 
                 if found_genre_id:
-                    result = discover_movies_by_genre(
-                        genre_id=found_genre_id,
-                        limit=5,
-                        region="US",
-                        language="es"
-                    )
-                    if "error" in result:
-                        bot_reply = result["error"]
-                    elif "message" in result:
-                        bot_reply = result["message"]
-                    else:
+                    # Lógica de múltiples páginas para no quedarnos sin recomendaciones
+                    MAX_PAGES = 5
+                    all_new_movies = []
+                    current_page = 1
+                    while current_page <= MAX_PAGES:
+                        result = discover_movies_by_genre(
+                            genre_id=found_genre_id,
+                            limit=20,  
+                            region=user_region,
+                            language="es",
+                            page=current_page
+                        )
+
+                        if "error" in result:
+                            bot_reply = result["error"]
+                            break
+                        elif "message" in result:
+                            # No se encontraron en esta página
+                            current_page += 1
+                            continue
+
                         movie_list = result.get("movies", [])
-                        if not movie_list:
-                            bot_reply = "No encontré películas de ese género en este momento."
-                        else:
-                            lines = [
-                                f"{m['title']} (Estreno: {m['release_date']})"
-                                for m in movie_list
-                                if m["id"] not in ids_recomendados
-                            ]
-                            if not lines:
-                                bot_reply = f"Todas las de {found_genre_word} ya te las recomendé."
-                            else:
-                                bot_reply = (
-                                    f"Películas de {found_genre_word} que podrían gustarte:\n"
-                                    + "\n".join(lines)
-                                )
-                                for mov in movie_list:
-                                    if mov["id"] not in ids_recomendados:
-                                        db.session.add(Recommendation(
-                                            user_id=current_user.id,
-                                            movie_id=mov["id"],
-                                            movie_title=mov["title"]
-                                        ))
-                                db.session.commit()
+                        new_in_page = [
+                            m for m in movie_list
+                            if m["id"] not in ids_recomendados
+                        ]
+                        all_new_movies.extend(new_in_page)
+
+                        if len(all_new_movies) >= 5:
+                            break
+
+                        current_page += 1
+
+                    final_recommendations = all_new_movies[:5]
+                    if not final_recommendations:
+                        bot_reply = f"Todas las de {found_genre_word} ya te las recomendé (o no hay más resultados)."
+                    else:
+                        lines = [
+                            f"{m['title']} (Estreno: {m['release_date']})"
+                            for m in final_recommendations
+                        ]
+                        bot_reply = (
+                            f"Películas de {found_genre_word} que podrían gustarte:\n"
+                            + "\n".join(lines)
+                        )
+                        for mov in final_recommendations:
+                            db.session.add(Recommendation(
+                                user_id=current_user.id,
+                                movie_id=mov["id"],
+                                movie_title=mov["title"]
+                            ))
+                        db.session.commit()
 
                 else:
+                    # Sin género específico -> películas recientes
                     if not tail or "pelicula" in tail or "reciente" in tail or "algo" in tail:
-                        result = get_now_playing_movies(limit=5, region="US", language="es")
+                        result = get_now_playing_movies(limit=5, region=user_region, language="es")
                         if "error" in result:
                             bot_reply = result["error"]
                         elif "message" in result:
@@ -373,13 +407,13 @@ def chat():
                         else:
                             rating = result["rating"]
                             bot_reply = (
-                                f"Para la película '{tail}', la puntuación promedio "
-                                f"en TMDB es {rating}. ¿Te gustaría saber algo más?"
+                                f"Para la película '{tail}', la puntuación promedio en TMDB es {rating}. "
+                                "¿Te gustaría saber algo más?"
                             )
 
             # 6. "peliculas mas recientes" / "estrenos"
             elif ("peliculas mas recientes" in user_msg_clean) or ("estrenos" in user_msg_clean):
-                result = get_now_playing_movies(limit=5, region="US", language="es")
+                result = get_now_playing_movies(limit=5, region=user_region, language="es")
                 if "error" in result:
                     bot_reply = result["error"]
                 elif "message" in result:
@@ -410,7 +444,7 @@ def chat():
                                     ))
                             db.session.commit()
 
-            # 7. Caso genérico: GPT
+            # 7. Caso genérico -> GPT
             else:
                 recomendaciones_previas = Recommendation.query.filter_by(user_id=current_user.id).all()
                 no_repetir = ", ".join([r.movie_title for r in recomendaciones_previas]) or "ninguna"
@@ -419,6 +453,7 @@ def chat():
                 Eres un bot recomendador de películas llamado MovieBot.
                 Género favorito del usuario: {current_user.favorite_genre or 'No especificado'}.
                 Género que debe evitar: {current_user.disliked_genre or 'No especificado'}.
+                Región del usuario: {user_region}.
                 No recomiendes las siguientes películas otra vez: {no_repetir}.
                 Responde de forma breve y clara.
                 """
@@ -432,7 +467,8 @@ def chat():
                         ]
                     )
                     bot_reply = response['choices'][0]['message']['content']
-                    # Intentar extraer título
+
+                    # Intentar extraer título (heurística con comillas)
                     patron_titulo = re.compile(r'"([^"]+)"')
                     match = patron_titulo.search(bot_reply)
                     if match:
@@ -447,6 +483,7 @@ def chat():
                                     movie_title=titulo_gpt
                                 ))
                                 db.session.commit()
+
                 except AuthenticationError:
                     bot_reply = "Error de autenticación con OpenAI. Verifica tu clave API."
                     logger.error("Error de autenticación con OpenAI.")
@@ -460,7 +497,7 @@ def chat():
                     bot_reply = f"Error inesperado: {e}"
                     logger.error(f"Error inesperado: {e}")
 
-            # Guardar respuesta del bot
+            # Guardamos la respuesta del bot en la BD
             db.session.add(Message(content=bot_reply, author="assistant", user=current_user))
             db.session.commit()
 
@@ -479,6 +516,7 @@ def perfil():
         if form.validate_on_submit():
             current_user.favorite_genre = form.favorite_genre.data
             current_user.disliked_genre = form.disliked_genre.data
+            current_user.region = form.region.data
             db.session.commit()
             flash("Perfil actualizado exitosamente.", "success")
             return redirect(url_for('perfil'))
@@ -488,5 +526,7 @@ def perfil():
         logger.error(f"Error en /perfil: {e}")
         return "Ha ocurrido un error interno en el servidor.", 500
 
+
 if __name__ == "__main__":
+    # Para desarrollo, si quieres debug=True
     app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

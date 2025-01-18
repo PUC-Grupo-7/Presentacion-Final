@@ -28,4 +28,18 @@ class ProfileForm(FlaskForm):
         ],
         validators=[DataRequired()]
     )
+    region = SelectField(
+        'Región',
+        choices=[
+            ('US', 'Estados Unidos'),
+            ('MX', 'México'),
+            ('ES', 'España'),
+            ('AR', 'Argentina'),
+            ('CL', 'Chile'),
+            # Agrega más según tus necesidades
+        ],
+        validators=[DataRequired()],
+        default='US'
+    )
+
     submit = SubmitField('Guardar')

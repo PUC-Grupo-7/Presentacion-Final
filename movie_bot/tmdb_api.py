@@ -31,7 +31,8 @@ def get_streaming_platforms(movie_name, region="US"):
     if not results:
         return {"error": f"No se encontró la película '{movie_name}' en TMDB."}
 
-    movie = results[0]
+    # Seleccionamos la mejor coincidencia (por ej. la de mayor puntuación)
+    movie = max(results, key=lambda x: x.get("vote_average", 0))
     movie_id = movie["id"]
 
     watch_providers_url = f"{base_url}/movie/{movie_id}/watch/providers"
@@ -46,7 +47,7 @@ def get_streaming_platforms(movie_name, region="US"):
 
     providers = response.json().get("results", {}).get(region, {}).get("flatrate", [])
     if not providers:
-        return {"message": f"No se encontró información de streaming para '{movie_name}'."}
+        return {"message": f"No se encontró información de streaming para '{movie_name}' en la región {region}."}
 
     platforms = [{"id": p["provider_id"], "name": p["provider_name"], "logo": p["logo_path"]} for p in providers]
     return {"movie_id": movie_id, "movie": movie_name, "platforms": platforms}
@@ -74,13 +75,14 @@ def get_movie_rating(movie_name):
     if not results:
         return {"error": f"No se encontró la película '{movie_name}'."}
 
-    movie = results[0]
+    # Seleccionamos la mejor coincidencia
+    movie = max(results, key=lambda x: x.get("vote_average", 0))
     rating = movie.get("vote_average", "No disponible")
 
     return {"movie_id": movie["id"], "movie": movie_name, "rating": rating}
 
 
-def get_similar_movies(movie_name):
+def get_similar_movies(movie_name, language="en"):
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
 
@@ -88,7 +90,7 @@ def get_similar_movies(movie_name):
         return {"error": "No se ha configurado la clave de TMDB (TMDB_API_KEY)."}
 
     search_url = f"{base_url}/search/movie"
-    params = {"api_key": api_key, "query": movie_name}
+    params = {"api_key": api_key, "query": movie_name, "language": language}
     try:
         response = requests.get(search_url, params=params)
     except requests.exceptions.RequestException as e:
@@ -102,12 +104,13 @@ def get_similar_movies(movie_name):
     if not results:
         return {"error": f"No se encontró la película '{movie_name}'."}
 
-    movie = results[0]
+    # Tomamos la mejor coincidencia
+    movie = max(results, key=lambda x: x.get("vote_average", 0))
     movie_id = movie["id"]
 
     similar_url = f"{base_url}/movie/{movie_id}/similar"
     try:
-        response = requests.get(similar_url, params={"api_key": api_key})
+        response = requests.get(similar_url, params={"api_key": api_key, "language": language})
     except requests.exceptions.RequestException as e:
         logger.error(f"[get_similar_movies] Error HTTP al obtener similares: {e}")
         return {"error": "Error al obtener recomendaciones."}
@@ -152,7 +155,9 @@ def get_movie_trailer(movie_name):
     if not results:
         return {"error": f"No se encontró la película '{movie_name}'."}
 
-    movie_id = results[0]["id"]
+    # Seleccionamos la mejor coincidencia
+    movie = max(results, key=lambda x: x.get("vote_average", 0))
+    movie_id = movie["id"]
 
     videos_url = f"{base_url}/movie/{movie_id}/videos"
     params = {"api_key": api_key, "language": "es"}
@@ -178,7 +183,7 @@ def get_movie_trailer(movie_name):
     return {"message": "No se encontró un tráiler de YouTube para esta película."}
 
 
-def get_popular_movies(limit=5):
+def get_popular_movies(limit=5, region="US", language="es", page=1):
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
     url = f"{base_url}/movie/popular"
@@ -187,7 +192,12 @@ def get_popular_movies(limit=5):
         logger.warning("[get_popular_movies] TMDB_API_KEY no configurada.")
         return []
 
-    params = {"api_key": api_key, "language": "es", "page": 1}
+    params = {
+        "api_key": api_key,
+        "language": language,
+        "region": region,
+        "page": page
+    }
     try:
         response = requests.get(url, params=params)
     except requests.exceptions.RequestException as e:
@@ -216,7 +226,11 @@ def get_popular_movies(limit=5):
     return banners
 
 
-def get_carousel_banners(limit=5):
+def get_carousel_banners(limit=5, region="US", language="es", page=1):
+    """
+    Similar a get_popular_movies, pero podemos usar la misma fuente (películas populares),
+    cambiando la página para evitar duplicar los mismos resultados.
+    """
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
     url = f"{base_url}/movie/popular"
@@ -225,7 +239,12 @@ def get_carousel_banners(limit=5):
         logger.warning("[get_carousel_banners] TMDB_API_KEY no configurada.")
         return []
 
-    params = {"api_key": api_key, "language": "es", "page": 1}
+    params = {
+        "api_key": api_key,
+        "language": language,
+        "region": region,
+        "page": page
+    }
     try:
         response = requests.get(url, params=params)
     except requests.exceptions.RequestException as e:
@@ -304,7 +323,7 @@ def get_now_playing_movies(limit=5, region="US", language="es"):
     return {"movies": movies}
 
 
-def discover_movies_by_genre(genre_id, limit=5, region="US", language="es"):
+def discover_movies_by_genre(genre_id, limit=5, region="US", language="es", page=1):
     api_key = os.getenv("TMDB_API_KEY")
     base_url = "https://api.themoviedb.org/3"
     discover_url = f"{base_url}/discover/movie"
@@ -318,7 +337,7 @@ def discover_movies_by_genre(genre_id, limit=5, region="US", language="es"):
         "region": region,
         "sort_by": "popularity.desc",
         "with_genres": genre_id,
-        "page": 1
+        "page": page
     }
     try:
         response = requests.get(discover_url, params=params)

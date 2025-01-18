@@ -1,4 +1,3 @@
-<!-- movie_bot/templates/perfil.html -->
 {% extends "base.html" %}
 
 {% block content %}
@@ -14,7 +13,7 @@
             <label for="{{ form.favorite_genre.id }}" class="form-label">
                 🎥 {{ form.favorite_genre.label }} <span class="text-danger">*</span>
             </label>
-            {{ form.favorite_genre(class="form-control", **{'aria-describedby': 'favoriteGenreHelp'}) }}
+            {{ form.favorite_genre(class="form-control") }}
             {% if form.favorite_genre.errors %}
                 <div class="text-danger">
                     {% for error in form.favorite_genre.errors %}
@@ -29,10 +28,25 @@
             <label for="{{ form.disliked_genre.id }}" class="form-label">
                 🚫 {{ form.disliked_genre.label }} <span class="text-danger">*</span>
             </label>
-            {{ form.disliked_genre(class="form-control", **{'aria-describedby': 'dislikedGenreHelp'}) }}
+            {{ form.disliked_genre(class="form-control") }}
             {% if form.disliked_genre.errors %}
                 <div class="text-danger">
                     {% for error in form.disliked_genre.errors %}
+                        <small>{{ error }}</small>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Campo: Región -->
+        <div class="mb-3">
+            <label for="{{ form.region.id }}" class="form-label">
+                🌎 {{ form.region.label }} <span class="text-danger">*</span>
+            </label>
+            {{ form.region(class="form-control") }}
+            {% if form.region.errors %}
+                <div class="text-danger">
+                    {% for error in form.region.errors %}
                         <small>{{ error }}</small>
                     {% endfor %}
                 </div>
